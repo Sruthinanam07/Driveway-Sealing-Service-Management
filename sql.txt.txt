@@ -1,0 +1,228 @@
+CREATE TABLE Client (
+    Username VARCHAR(50) NOT NULL UNIQUE,    -- Username
+    ClientID INT AUTO_INCREMENT PRIMARY KEY, -- Unique client ID
+    FirstName VARCHAR(50) NOT NULL,          -- First name
+    LastName VARCHAR(50) NOT NULL,           -- Last name
+    Password VARCHAR(255) NOT NULL,          -- Hashed password
+    Address TEXT NOT NULL,                   -- Address
+    CreditCardInfo VARCHAR(20) NOT NULL,     -- Credit card information
+    PhoneNumber VARCHAR(15) NOT NULL,        -- Phone number
+    Email VARCHAR(100) NOT NULL UNIQUE,      -- Email
+    RegisterDay TIMESTAMP DEFAULT CURRENT_TIMESTAMP -- Registration timestamp
+);
+CREATE TABLE bills (
+    BillID INT AUTO_INCREMENT PRIMARY KEY,
+    RequestID INT NOT NULL,
+    ClientID INT NOT NULL,
+    Amount DECIMAL(10,2) NOT NULL,
+    Discount DECIMAL(10,2) DEFAULT 0.00,
+    Status ENUM('Pending', 'Paid', 'Disputed') DEFAULT 'Pending',
+    ClientNote TEXT,
+    DavidNote TEXT,
+    PaymentDate TIMESTAMP NULL,
+    Note TEXT,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FinalAmount DECIMAL(10,2) GENERATED ALWAYS AS (Amount - Discount) STORED
+);
+CREATE TABLE chat_messages (
+    MessageID INT AUTO_INCREMENT PRIMARY KEY,
+    RequestID INT NOT NULL,
+    Sender VARCHAR(50) NOT NULL,
+    Message TEXT NOT NULL,
+    SentAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE negotiations (
+    NegotiationID INT AUTO_INCREMENT PRIMARY KEY,
+    QuoteID INT NULL,
+    BillID INT NULL,
+    Sender ENUM('Client', 'David Smith') NOT NULL,
+    Note TEXT NOT NULL,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (QuoteID) REFERENCES quotes(QuoteID) ON DELETE CASCADE,
+    FOREIGN KEY (BillID) REFERENCES bills(BillID) ON DELETE CASCADE
+);
+CREATE TABLE orders (
+    OrderID INT AUTO_INCREMENT PRIMARY KEY,
+    QuoteID INT NOT NULL,
+    ClientID INT NOT NULL,
+    CompletedBy VARCHAR(255) NULL,
+    Status ENUM('Ongoing', 'Completed') DEFAULT 'Ongoing',
+    WorkStartDate DATE NOT NULL,
+    WorkEndDate DATE NOT NULL,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (QuoteID) REFERENCES quotes(QuoteID) ON DELETE CASCADE,
+    FOREIGN KEY (ClientID) REFERENCES Client(ClientID) ON DELETE CASCADE
+);
+CREATE TABLE quotes (
+    QuoteID INT AUTO_INCREMENT PRIMARY KEY,
+    RequestID INT UNIQUE NOT NULL,
+    ProposedPrice DECIMAL(10,2) NOT NULL,
+    WorkStartDate DATE NOT NULL,
+    WorkEndDate DATE NOT NULL,
+    Note TEXT,
+    Status ENUM('Negotiating', 'Accepted', 'Rejected') DEFAULT 'Negotiating',
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ClientNote TEXT,
+    DavidNote TEXT
+);
+CREATE TABLE quote_requests (
+    RequestID INT AUTO_INCREMENT PRIMARY KEY,
+    ClientID INT NOT NULL,
+    PropertyAddress TEXT NOT NULL,
+    SquareFeet INT NOT NULL,
+    ProposedPrice DECIMAL(10,2) NOT NULL,
+    Note TEXT,
+    Image1 VARCHAR(255) NOT NULL,
+    Image2 VARCHAR(255) NOT NULL,
+    Image3 VARCHAR(255) NOT NULL,
+    Image4 VARCHAR(255) NOT NULL,
+    Image5 VARCHAR(255) NOT NULL,
+    RequestDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    Status ENUM('Pending', 'Rejected', 'Negotiating', 'Accepted') DEFAULT 'Pending',
+    ResponseNote TEXT
+);
+CREATE TABLE work_orders (
+    WorkOrderID INT AUTO_INCREMENT PRIMARY KEY,
+    RequestID INT NOT NULL,
+    ClientID INT NOT NULL,
+    CompletedBy VARCHAR(255),
+    DavidProposedPrice DECIMAL(10,2),
+    WorkStartDate DATE NOT NULL,
+    WorkEndDate DATE NOT NULL,
+    Contract TEXT NOT NULL,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    Status ENUM('Created', 'In Progress', 'Completed', 'Cancelled') DEFAULT 'Created'
+);
+
+Sql Statements:
+//Many functionalities those are in dbService.js(kindly check)
+Queries:
+//big-client
+Query:-WITH OrderCounts AS (
+                SELECT 
+                    ClientID, 
+                    COUNT(WorkOrderID) AS TotalOrders
+                FROM 
+                    work_orders
+                WHERE 
+                    CompletedBy = 'David Smith' 
+                    AND Status = 'Completed'
+                GROUP BY 
+                    ClientID
+            ),
+            MaxOrders AS (
+                SELECT 
+                    MAX(TotalOrders) AS MaxOrderCount
+                FROM 
+                    OrderCounts
+            )
+            SELECT 
+                c.ClientID, 
+                c.FirstName, 
+                c.LastName, 
+                oc.TotalOrders
+            FROM 
+                OrderCounts oc
+            JOIN 
+                Client c ON oc.ClientID = c.ClientID
+            JOIN 
+                MaxOrders mo ON oc.TotalOrders = mo.MaxOrderCount;
+//difficult clients
+ SELECT 
+                c.ClientID, 
+                c.FirstName, 
+                c.LastName, 
+                COUNT(qr.RequestID) AS TotalRequests
+            FROM 
+                quote_requests qr
+            JOIN 
+                Client c ON qr.ClientID = c.ClientID
+            WHERE 
+                qr.Status = 'Negotiating'
+            GROUP BY 
+                c.ClientID, c.FirstName, c.LastName
+            HAVING 
+                COUNT(qr.RequestID) = 3;
+//accept
+SELECT 
+                qr.RequestID,
+                c.ClientID,
+                c.FirstName,
+                c.LastName,
+                qr.PropertyAddress,
+                q.ProposedPrice,
+                q.WorkStartDate,
+                q.WorkEndDate,
+                q.Status
+            FROM 
+                quotes q
+            JOIN 
+                quote_requests qr ON q.RequestID = qr.RequestID
+            JOIN 
+                Client c ON qr.ClientID = c.ClientID
+            WHERE 
+                q.Status = 'Accepted'
+                AND MONTH(q.WorkStartDate) = 12 
+                AND YEAR(q.WorkStartDate) = 2024;
+ //neversubmitted
+  SELECT 
+                c.ClientID,
+                c.FirstName,
+                c.LastName,
+                c.Username,
+                c.Email
+            FROM 
+                Client c
+            LEFT JOIN 
+                quote_requests qr ON c.ClientID = qr.ClientID
+            WHERE 
+                qr.RequestID IS NULL;
+//largest-driveway
+ SELECT 
+                qr.PropertyAddress,
+                qr.SquareFeet
+            FROM 
+                work_orders wo
+            JOIN 
+                quote_requests qr ON wo.RequestID = qr.RequestID
+            WHERE 
+                wo.CompletedBy = 'David Smith' 
+                AND wo.Status = 'Completed'
+                AND qr.SquareFeet = (
+                    SELECT MAX(qr2.SquareFeet)
+                    FROM work_orders wo2
+                    JOIN quote_requests qr2 ON wo2.RequestID = qr2.RequestID
+                    WHERE wo2.CompletedBy = 'David Smith' 
+                      AND wo2.Status = 'Completed'
+                      ORDER BY 
+            qr.SquareFeet DESC
+        LIMIT 1;
+                );
+//getoverduebills
+SELECT 
+                BillID,
+                ClientID,
+                RequestID,
+                Amount,
+                Discount,
+                FinalAmount,
+                Status,
+                CreatedAt
+            FROM 
+                bills
+            WHERE 
+                Status != 'Paid'
+                AND DATE_ADD(CreatedAt, INTERVAL 7 DAY) < NOW();
+//bad-clients
+SELECT c.ClientID, c.FirstName, c.LastName, c.Email
+            FROM Client c
+            JOIN bills b ON c.ClientID = b.ClientID
+            WHERE b.Status != 'Paid' AND DATE_ADD(b.CreatedAt, INTERVAL 7 DAY) < NOW()
+            GROUP BY c.ClientID
+            HAVING COUNT(CASE WHEN b.Status = 'Paid' THEN 1 END) = 0
+//good-clients
+SELECT c.ClientID, c.FirstName, c.LastName, c.Email
+            FROM Client c
+            JOIN bills b ON c.ClientID = b.ClientID
+            WHERE b.Status = 'Paid' AND TIMESTAMPDIFF(HOUR, b.CreatedAt, b.PaymentDate) <= 24
+            GROUP BY c.ClientID
