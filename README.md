@@ -1,4 +1,4 @@
-# Getting Started with the project first we have done with the backend code.
+# Getting Started with the project.
 
 ## In which At C:\xampp\htdocs, run git clone https://github.com/sruthinanam07/database_javascript.git to copy the whole sample code to the current directory.
 
